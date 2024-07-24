@@ -11,15 +11,23 @@ public partial class Camera : Control
 	TcpClient client;
 	NetworkStream networkStream;
 	FrameStream frameStream;
+    Rid textureRid;
+	Texture2D texture2D;
 
-	Image image;
-    ImageTexture texture;
+    RenderingDevice renderingDevice;
 
     [Export] private PackedScene cameraView;
 
 	public override void _Ready()
 	{
-		_ = ReceiveVideoAsync();
+		_ = ReceiveVideoAsync().ContinueWith(x =>
+		{
+			if(x.Exception != null)
+			{
+				GD.Print(x.Exception);
+				throw (x.Exception.InnerException);
+			}
+		});
 	}
 
 	private async Task ReceiveVideoAsync()
@@ -27,7 +35,7 @@ public partial class Camera : Control
 		listener = new TcpListener(System.Net.IPAddress.Any, 10040);
 		listener.Start();
 		GD.Print("Waiting for connection...");
-		
+
 		while (true)
 		{
 			client = await listener.AcceptTcpClientAsync();
@@ -51,17 +59,32 @@ public partial class Camera : Control
             GetTree().Root.CallDeferred("add_child", cameraViewInstance);
             cameraViewInstance.Size = new Vector2I(width, height);
 
-            image = Image.Create(width, height, false, Image.Format.Rgb8);
-            texture = ImageTexture.CreateFromImage(image);
-            rect.Texture = texture;
+            Image image = Image.Create(width, height, false, Image.Format.Rgb8);
+            texture2D = ImageTexture.CreateFromImage(image);
+            rect.Texture = texture2D;
 
-            frameStream = new FrameStream(width * height * 3);
+			textureRid = RenderingServer.TextureGetRdTexture(texture2D.GetRid());
+
+            /*GD.Print($"Creating Texture...");
+			RDTextureFormat textureFormat = new()
+			{
+				Width = (uint)width,
+				Height = (uint)height,
+				Depth = 1,
+				TextureType = RenderingDevice.TextureType.Type2D,
+				Format = RenderingDevice.DataFormat.R8G8B8A8Srgb,
+				UsageBits = RenderingDevice.TextureUsageBits.SamplingBit | RenderingDevice.TextureUsageBits.CanUpdateBit
+			};
+            textureRid = RenderingServer.GetRenderingDevice().TextureCreate(textureFormat, new RDTextureView());
+            GD.Print($"Texture ID is {textureRid} and {(textureRid.IsValid ? "is valid" : "is not valid")}");*/
+
+            frameStream = new FrameStream(width * height * 4);
 
             await FFMpegArguments
 				.FromPipeInput(new StreamPipeSource(networkStream), options => options
 					.WithArgument(new FFMpegCore.Arguments.CustomArgument(@"-flags low_delay")))
 				.OutputToPipe(new StreamPipeSink(frameStream), options => options
-					.WithArgument(new FFMpegCore.Arguments.CustomArgument($@"-flags low_delay -s {width}x{height} -vcodec rawvideo -pix_fmt rgb24 -f image2pipe")))
+					.WithArgument(new FFMpegCore.Arguments.CustomArgument($@"-flags low_delay -s {width}x{height} -vcodec rawvideo -pix_fmt rgba -f image2pipe")))
 				.ProcessAsynchronously();
 
             cameraViewInstance.Visible = false;
@@ -71,13 +94,17 @@ public partial class Camera : Control
 
 	public override void _Process(double delta)
 	{
-		if (frameStream != null && frameStream.IsNewFrameAvailable)
-		{
+        if (frameStream != null && frameStream.IsNewFrameAvailable)
+        {
+			if (renderingDevice == null)
+			{
+				renderingDevice = RenderingServer.GetRenderingDevice();
+				GD.Print(renderingDevice.TextureGetFormat(textureRid).Format);
+			}
             using (var frameAccessor = frameStream.GetFrameAccessor())
 			{
-                image.SetData(texture.GetWidth(), texture.GetHeight(), false, Image.Format.Rgb8, frameAccessor.frame);
+                renderingDevice.TextureUpdate(textureRid, 0, frameAccessor.frame);
             }
-            texture.Update(image);
         }
 	}
 }

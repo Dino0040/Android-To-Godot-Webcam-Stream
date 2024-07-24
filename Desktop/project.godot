@@ -22,3 +22,8 @@ window/subwindows/embed_subwindows=false
 [dotnet]
 
 project/assembly_name="AR Webcam"
+
+[rendering]
+
+rendering_device/staging_buffer/max_size_mb=256
+rendering_device/staging_buffer/texture_upload_region_size_px=256

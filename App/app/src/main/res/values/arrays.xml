@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="resolution_options">
+        <item>1920x1080</item>
+        <item>1280x720</item>
+        <item>640x480</item>
+    </string-array>
+</resources>
